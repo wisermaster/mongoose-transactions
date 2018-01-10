@@ -22,6 +22,9 @@ export default class Transaction {
     /** The id of the current transaction document on database */
     private transactionId: any = ""
 
+	/** The id of created by distributed transaction system */
+	private rootTransactionId: any = ""
+
     /** The actions to execute on mongoose collections when transaction run is called */
     private operations: Array<{
         /** The transaction type to run */
@@ -53,6 +56,7 @@ export default class Transaction {
     constructor(useDb = false) {
         this.useDb = useDb
         this.transactionId = ""
+	    this.rootTransactionId = ""
     }
 
     /**
@@ -103,7 +107,7 @@ export default class Transaction {
      */
     public async getTransactionId() {
         if (this.transactionId === "") {
-            await this.createTransaction();
+            await this.createTransaction(undefined);
         }
         return this.transactionId;
 
@@ -132,7 +136,7 @@ export default class Transaction {
     public async saveOperations() {
 
         if (this.transactionId === "") {
-            await this.createTransaction()
+            await this.createTransaction(undefined)
         }
 
         await Model.findOneAndUpdate(this.transactionId, {
@@ -152,7 +156,7 @@ export default class Transaction {
         this.rollbackIndex = 0
         this.transactionId = ""
         if (this.useDb) {
-            this.transactionId = await this.createTransaction()
+            this.transactionId = await this.createTransaction(undefined)
         }
     }
 
@@ -198,6 +202,7 @@ export default class Transaction {
         const transactionObj = {
             data,
             findId,
+	        rootTransactionId: _rootTrId,
             model,
             modelName,
             oldModel: null,
@@ -221,6 +226,7 @@ export default class Transaction {
         const transactionObj = {
             data: null,
             findId,
+	        rootTransactionId: _rootTrId,
             model,
             modelName,
             oldModel: null,
@@ -246,7 +252,7 @@ export default class Transaction {
     public async run() {
 
         if (this.useDb && this.transactionId === "") {
-            await this.createTransaction()
+            await this.createTransaction(undefined)
         }
 
         const final = []
@@ -321,7 +327,7 @@ export default class Transaction {
     public async rollback(howmany = this.rollbackIndex + 1) {
 
         if (this.useDb && this.transactionId === "") {
-            await this.createTransaction()
+            await this.createTransaction(undefined)
         }
 
         let transactionsToRollback: any = this.operations.slice(0, this.rollbackIndex + 1)
@@ -382,11 +388,19 @@ export default class Transaction {
         return await model.findById(findId).lean().exec();
     }
 
-    private async createTransaction() {
+    private async createTransaction(rootTransactionId) {
         if (this.useDb) {
 
+	        let _rootTrId = null;
+	        if(rootTransactionId){
+		        if (mongoose.Types.ObjectId.isValid(rootTransactionId)) {
+			        _rootTrId = rootTransactionId;
+		        }
+	        }
+
             const transaction = await Model.create({
-                operations: this.operations,
+	            rootTransactionId: _rootTrId,
+	            operations: this.operations,
                 rollbackIndex: this.rollbackIndex
             })
 
